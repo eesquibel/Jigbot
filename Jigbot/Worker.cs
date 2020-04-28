@@ -1,10 +1,12 @@
 using Discord;
+using Discord.Rest;
 using Discord.WebSocket;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Threading;
@@ -19,15 +21,17 @@ namespace Jigbot
         private readonly Random random;
         private readonly string Command;
         private readonly string UriBase;
+        private Dictionary<ulong, RestUserMessage> History;
         private JArray Data;
 
         public Worker(ILogger<Worker> logger)
         {
             this.logger = logger;
-            Command = Environment.GetEnvironmentVariable("Command");
+             Command = Environment.GetEnvironmentVariable("Command");
             UriBase = Environment.GetEnvironmentVariable("URIBASE");
 
             random = new Random();
+            History = new Dictionary<ulong, RestUserMessage>();
 
             discord = new DiscordSocketClient();
             discord.Log += Discord_Log;
@@ -43,6 +47,38 @@ namespace Jigbot
                 return;
             }
 
+            if (message.Content == "!purgeall")
+            {
+                var messages = message.Channel.GetMessagesAsync(limit: 20);
+                await foreach(var page in messages)
+                {
+                    foreach (var item in page)
+                    {
+                        if (item.Author.Id == discord.CurrentUser.Id)
+                        {
+                            await item.DeleteAsync();
+                            await Task.Delay(1000);
+                        }
+                    }
+                }
+
+                return;
+            }
+            
+            if (message.Content == "!purge")
+            {
+                if (History.ContainsKey(message.Author.Id))
+                {
+                    RestUserMessage item;
+                    lock (History)
+                    {
+                        item = History[message.Author.Id];
+                        History.Remove(message.Author.Id);
+                    }
+                    await item.DeleteAsync();
+                }
+            }
+            
             if (message.Content == "!" + Command)
             {
                 var index = random.Next(0, Data.Count - 1);
@@ -51,8 +87,11 @@ namespace Jigbot
                 var request = WebRequest.Create(UriBase + file);
                 using (var response = await request.GetResponseAsync())
                 {
-                    await message.Channel.SendFileAsync(response.GetResponseStream(), file);
+                    var result = await message.Channel.SendFileAsync(response.GetResponseStream(), file);
+                    History[message.Author.Id] = result;
                 }
+
+                return;
             }
         }
 
@@ -70,10 +109,6 @@ namespace Jigbot
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            var command = Environment.GetEnvironmentVariable("command");
-            var uriBase = Environment.GetEnvironmentVariable("URIBASE");
-            var env = Environment.GetEnvironmentVariables();
-
             var request = WebRequest.Create(UriBase);
             using (var response = await request.GetResponseAsync())
             {
