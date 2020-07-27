@@ -7,7 +7,12 @@
       }
     },
     "Docker": {
-      "commandName": "Docker"
+      "commandName": "Docker",
+      "environmentVariables": {
+        "Command": "",
+        "URIBASE": "",
+        "Token": ""
+      }
     }
   }
 }
