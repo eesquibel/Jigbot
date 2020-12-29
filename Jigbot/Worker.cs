@@ -8,7 +8,10 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,18 +23,40 @@ namespace Jigbot
         private readonly DiscordSocketClient discord;
         private readonly Random random;
         private readonly string Command;
-        private readonly string UriBase;
+        private readonly Uri UriBase;
+        private readonly string Uploads;
+        private readonly Regex CommandX;
+        private readonly WebClient WebClient;
+        private readonly Emoji Check;
+        private readonly SHA1CryptoServiceProvider SHA1;
         private Dictionary<ulong, RestUserMessage> History;
-        private JArray Data;
+        private string[] Data;
 
         public Worker(ILogger<Worker> logger)
         {
             this.logger = logger;
-             Command = Environment.GetEnvironmentVariable("Command");
-            UriBase = Environment.GetEnvironmentVariable("URIBASE");
+            Command = Environment.GetEnvironmentVariable("Command");
+            UriBase = new Uri(Environment.GetEnvironmentVariable("URIBASE"));
+
+            var uploads = Environment.GetEnvironmentVariable("UPLOADS");
+
+            if (!string.IsNullOrEmpty(uploads))
+            {
+                if (Directory.Exists(uploads))
+                {
+                    Uploads = (new DirectoryInfo(uploads)).FullName;
+                    WebClient = new WebClient();
+                    Check = new Emoji("\u2611\uFE0F");
+                    SHA1 = new SHA1CryptoServiceProvider();
+                } else
+                {
+                    logger.LogError("UPLOADS directory does not exist: {uplodas}", new { uploads });
+                }
+            }
 
             random = new Random();
             History = new Dictionary<ulong, RestUserMessage>();
+            CommandX = new Regex(@"\!" + Regex.Escape(Command) + @"[\s]*(.*)", RegexOptions.IgnoreCase);
 
             discord = new DiscordSocketClient();
             discord.Log += Discord_Log;
@@ -50,7 +75,7 @@ namespace Jigbot
             if (message.Content == "!purgeall")
             {
                 var messages = message.Channel.GetMessagesAsync(limit: 20);
-                await foreach(var page in messages)
+                await foreach (var page in messages)
                 {
                     foreach (var item in page)
                     {
@@ -64,7 +89,7 @@ namespace Jigbot
 
                 return;
             }
-            
+
             if (message.Content == "!purge")
             {
                 if (History.ContainsKey(message.Author.Id))
@@ -78,20 +103,83 @@ namespace Jigbot
                     await item.DeleteAsync();
                 }
             }
-            
-            if (message.Content == "!" + Command)
+
+            if (CommandX.IsMatch(message.Content))
             {
-                var index = random.Next(0, Data.Count - 1);
-                var file = Data[index]["name"].ToString();
-
-                var request = WebRequest.Create(UriBase + file);
-                using (var response = await request.GetResponseAsync())
+                if (message.Attachments.Count > 0)
                 {
-                    var result = await message.Channel.SendFileAsync(response.GetResponseStream(), file);
-                    History[message.Author.Id] = result;
-                }
+                    if (Uploads == null)
+                    {
+                        return;
+                    }
 
+                    byte i = 0;
+                    var tasks = new Task[message.Attachments.Count];
+
+                    foreach (var attachment in message.Attachments)
+                    {
+                       tasks[i++] = Download(attachment);
+                    }
+
+                    Task.WaitAll(tasks);
+
+                    try
+                    {
+                        await message.AddReactionAsync(Check);
+                    } catch (Exception e)
+                    {
+                        logger.LogError(e, e.Message);
+                    }
+                }
+                else
+                {
+                    var index = random.Next(0, Data.Length - 1);
+                    var file = Data[index];
+                    RestUserMessage result = null;
+
+                    switch (UriBase.Scheme)
+                    {
+                        case "file":
+                            var info = new FileInfo(file);
+                            result = await message.Channel.SendFileAsync(Data[index], info.Name);
+                            break;
+                        case "http":
+                        case "https":
+                            var request = WebRequest.Create(UriBase + file);
+                            using (var response = await request.GetResponseAsync())
+                            {
+                                result = await message.Channel.SendFileAsync(response.GetResponseStream(), file);
+                            }
+                            break;
+                    }
+
+                    if (result != null)
+                    {
+                        History[message.Author.Id] = result;
+                    }
+                }
                 return;
+            }
+        }
+
+        private async Task Download(Attachment attachment)
+        {
+            try
+            {
+                var bytes = await WebClient.DownloadDataTaskAsync(attachment.Url);
+                var filename = Uploads + "/";
+                var file = new FileInfo(attachment.Filename);
+                using (var stream = new MemoryStream(bytes))
+                {
+                    var hash = await SHA1.ComputeHashAsync(stream);
+                    filename += BitConverter.ToString(hash).Replace("-", "").ToLower();
+                }
+                filename += file.Extension.ToLower();
+
+                await File.WriteAllBytesAsync(filename, bytes);
+            } catch (Exception e)
+            {
+                logger.LogError(e, e.Message);
             }
         }
 
@@ -109,27 +197,43 @@ namespace Jigbot
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            var request = WebRequest.Create(UriBase);
-            using (var response = await request.GetResponseAsync())
+            switch (UriBase.Scheme)
             {
-                using (var reader = new StreamReader(response.GetResponseStream()))
-                {
-                    using (var json = new JsonTextReader(reader))
+                case "file":
+                    if (!Directory.Exists(UriBase.LocalPath))
                     {
-                        Data = (JArray)await JToken.ReadFromAsync(json, stoppingToken);
+                        logger.LogError("Directoy does not exist: {UriBase}", new { UriBase });
+                        return;
                     }
-                }
+
+                    Data = Directory.GetFiles(UriBase.LocalPath, "*.*", SearchOption.TopDirectoryOnly);
+
+                    break;
+                case "http":
+                case "https":
+                    var request = WebRequest.Create(UriBase);
+                    using (var response = await request.GetResponseAsync())
+                    {
+                        using (var reader = new StreamReader(response.GetResponseStream()))
+                        {
+                            using (var json = new JsonTextReader(reader))
+                            {
+                                var data = (JArray)await JToken.ReadFromAsync(json, stoppingToken);
+                                Data = data.Select(item => item.Value<string>("name")).ToArray();
+                            }
+                        }
+                    }
+
+                    break;
             }
 
-            logger.LogInformation($"Found {Data.Count} images");
+            logger.LogInformation($"Found {Data.Length} images");
 
             await discord.LoginAsync(TokenType.Bot, Environment.GetEnvironmentVariable("Token"));
             await discord.StartAsync();
 
-            while (!stoppingToken.IsCancellationRequested)
+            while (!stoppingToken.WaitHandle.WaitOne(5000))
             {
-                logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-                await Task.Delay(5000, stoppingToken);
             }
         }
     }

@@ -1,7 +1,7 @@
-FROM mcr.microsoft.com/dotnet/core/runtime:3.1-nanoserver-1903 AS base
+FROM mcr.microsoft.com/dotnet/runtime:5.0-nanoserver-20H2 AS base
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/core/sdk:3.1-nanoserver-1903 AS build
+FROM mcr.microsoft.com/dotnet/sdk:5.0-nanoserver-20H2 AS build
 WORKDIR /src
 COPY ["Jigbot/Jigbot.csproj", "Jigbot/"]
 RUN dotnet restore "Jigbot/Jigbot.csproj"
@@ -13,9 +13,12 @@ FROM build AS publish
 RUN dotnet publish "Jigbot.csproj" -c Release -o /app/publish
 
 FROM base AS final
-ARG Token
-ARG Command
-ARG URIBASE
+ENV Token=""
+ENV Command=""
+ENV URIBASE=""
+ENV UPLOADS=""
+VOLUME /jigbot/uploads
+VOLUME /jigbot/images
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "Jigbot.dll"]

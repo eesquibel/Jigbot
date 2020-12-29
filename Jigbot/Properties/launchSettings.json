@@ -3,7 +3,11 @@
     "Jigbot": {
       "commandName": "Project",
       "environmentVariables": {
-        "DOTNET_ENVIRONMENT": "Development"
+        "UPLOADS": "D:\\Temp",
+        "DOTNET_ENVIRONMENT": "Development",
+        "Command": "test",
+        "URIBASE": "D:\\Temp",
+        "Token": "token"
       }
     },
     "Docker": {
