@@ -1,4 +1,5 @@
 using Discord;
+using Discord.Net;
 using Discord.Rest;
 using Discord.WebSocket;
 using Microsoft.Extensions.Hosting;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -26,11 +28,12 @@ namespace Jigbot
         private readonly Uri UriBase;
         private readonly string Uploads;
         private readonly Regex CommandX;
+        private readonly ConcurrentBag<ulong> NoManageMessages;
         private readonly WebClient WebClient;
         private readonly Emoji Check;
         private readonly SHA1CryptoServiceProvider SHA1;
         private readonly Regex HasUrl;
-        private Dictionary<ulong, RestUserMessage> History;
+        private ConcurrentDictionary<ulong, ulong> History;
         private string[] Data;
 
         public Worker(ILogger<Worker> logger)
@@ -50,19 +53,24 @@ namespace Jigbot
                     Check = new Emoji("\u2611\uFE0F");
                     SHA1 = new SHA1CryptoServiceProvider();
                     HasUrl = new Regex(@"https?://[\w\d\-\.\/]+\.(jpg|jpeg|gif|png)", RegexOptions.IgnoreCase);
-                } else
+                }
+                else
                 {
                     logger.LogError("UPLOADS directory does not exist: {uplodas}", new { uploads });
                 }
             }
 
             random = new Random();
-            History = new Dictionary<ulong, RestUserMessage>();
+            History = new ConcurrentDictionary<ulong, ulong>();
+            NoManageMessages = new ConcurrentBag<ulong>();
             CommandX = new Regex(@"\!" + Regex.Escape(Command) + @"[\s]*(.*)", RegexOptions.IgnoreCase);
 
             discord = new DiscordSocketClient(new DiscordSocketConfig
             {
-                // Increases memory usage, but needed to get embeds that are parsed asynchonously and sent via MESSAGE_UPDATE event
+                /**
+                 * Increases memory usage, but needed for the !purgeall command,
+                 * and to get embeds that are parsed asynchonously and sent via MESSAGE_UPDATE event
+                 */
                 MessageCacheSize = 128,
             });
 
@@ -108,11 +116,11 @@ namespace Jigbot
                 {
                     return;
                 }
-                
+
                 await DownloadEmbeds(after);
             }
         }
-        
+
         private async Task Discord_MessageReceived(SocketMessage message)
         {
             // The bot should never respond to itself.
@@ -121,36 +129,52 @@ namespace Jigbot
                 return;
             }
 
+            var channel = message.Channel;
+
             if (message.Content == "!purgeall")
             {
-                var messages = message.Channel.GetMessagesAsync(limit: 20);
-                await foreach (var page in messages)
+                // Delete what is cached first
+                var cachedMessages = channel.CachedMessages;
+                var cached = cachedMessages.Where(cache => cache.Author.Id == discord.CurrentUser.Id);
+                foreach (var item in cached)
                 {
-                    foreach (var item in page)
+                    await item.DeleteAsync();
+                    await Task.Delay(1000);
+                }
+
+                // If less than 20 messages where in cache
+                if (cachedMessages.Count < 20)
+                {
+                    // Then crawl the message history
+                    var messages = channel.GetMessagesAsync(limit: 20);
+                    await foreach (var page in messages)
                     {
-                        if (item.Author.Id == discord.CurrentUser.Id)
+                        foreach (var item in page)
                         {
-                            await item.DeleteAsync();
-                            await Task.Delay(1000);
+                            if (item.Author.Id == discord.CurrentUser.Id)
+                            {
+                                await item.DeleteAsync();
+                                await Task.Delay(1000);
+                            }
                         }
                     }
                 }
+
+                await DeleteCommandMessage(message);
 
                 return;
             }
 
             if (message.Content == "!purge")
             {
-                if (History.ContainsKey(message.Author.Id))
+                if (History.Remove(message.Author.Id, out ulong id))
                 {
-                    RestUserMessage item;
-                    lock (History)
-                    {
-                        item = History[message.Author.Id];
-                        History.Remove(message.Author.Id);
-                    }
-                    await item.DeleteAsync();
+                    await channel.DeleteMessageAsync(id);
                 }
+
+                await DeleteCommandMessage(message);
+
+                return;
             }
 
             if (CommandX.IsMatch(message.Content))
@@ -167,7 +191,7 @@ namespace Jigbot
 
                     foreach (var attachment in message.Attachments)
                     {
-                       tasks[i++] = Download(attachment);
+                        tasks[i++] = Download(attachment);
                     }
 
                     Task.WaitAll(tasks);
@@ -175,7 +199,8 @@ namespace Jigbot
                     try
                     {
                         await message.AddReactionAsync(Check);
-                    } catch (Exception e)
+                    }
+                    catch (Exception e)
                     {
                         logger.LogError(e, e.Message);
                     }
@@ -189,14 +214,15 @@ namespace Jigbot
                     }
 
                     await DownloadEmbeds(message);
-                } else
+                }
+                else
                 {
                     if (HasUrl.IsMatch(message.Content))
                     {
                         return;
                     }
                 }
-                
+
                 if (message.Attachments.Count == 0 && message.Embeds.Count == 0)
                 {
                     var index = random.Next(0, Data.Length - 1);
@@ -221,7 +247,8 @@ namespace Jigbot
 
                     if (result != null)
                     {
-                        History[message.Author.Id] = result;
+                        History.AddOrUpdate(message.Author.Id, result.Id, (key, old) => result.Id);
+                        await DeleteCommandMessage(message);
                     }
                 }
 
@@ -295,7 +322,30 @@ namespace Jigbot
                 filename += file.Extension.ToLower();
 
                 await File.WriteAllBytesAsync(filename, bytes);
-            } catch (Exception e)
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, e.Message);
+            }
+        }
+
+        private async Task DeleteCommandMessage(IMessage message)
+        {
+            try
+            {
+                if (!NoManageMessages.Contains(message.Channel.Id))
+                {
+                    await message.DeleteAsync();
+                }
+            }
+            catch (HttpException e)
+            {
+                if (e.HttpCode == HttpStatusCode.Forbidden)
+                {
+                    NoManageMessages.Add(message.Channel.Id);
+                }
+            }
+            catch (Exception e)
             {
                 logger.LogError(e, e.Message);
             }
