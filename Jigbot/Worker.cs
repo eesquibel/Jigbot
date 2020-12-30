@@ -131,7 +131,54 @@ namespace Jigbot
                         logger.LogError(e, e.Message);
                     }
                 }
-                else
+
+                if (message.Embeds.Count > 0)
+                {
+                    if (Uploads == null)
+                    {
+                        return;
+                    }
+
+                    byte i = 0;
+                    var react = false;
+                    var tasks = new Task[message.Embeds.Count];
+
+                    foreach (var embed in message.Embeds)
+                    {
+                        var uri = new Uri(embed.Url);
+                        var info = new FileInfo(uri.LocalPath);
+
+                        switch(info.Extension.ToLower())
+                        {
+                            case ".jpg":
+                            case ".jpeg":
+                            case ".gif":
+                            case ".png":
+                                tasks[i++] = Download(uri);
+                                react = true;
+                                break;
+                            default:
+                                tasks[i++] = Task.FromResult<object>(null);
+                                break;
+                        }
+                    }
+
+                    Task.WaitAll(tasks);
+
+                    try
+                    {
+                        if (react)
+                        {
+                            await message.AddReactionAsync(Check);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogError(e, e.Message);
+                    }
+                }
+                
+                if (message.Attachments.Count == 0 && message.Embeds.Count == 0)
                 {
                     var index = random.Next(0, Data.Length - 1);
                     var file = Data[index];
@@ -158,17 +205,28 @@ namespace Jigbot
                         History[message.Author.Id] = result;
                     }
                 }
+
                 return;
             }
         }
 
-        private async Task Download(Attachment attachment)
+        private Task Download(Attachment attachment)
+        {
+            return Download(new Uri(attachment.Url));
+        }
+
+        private Task Download(string uri)
+        {
+            return Download(new Uri(uri));
+        }
+
+        private async Task Download(Uri uri)
         {
             try
             {
-                var bytes = await WebClient.DownloadDataTaskAsync(attachment.Url);
+                var bytes = await WebClient.DownloadDataTaskAsync(uri);
                 var filename = Uploads + "/";
-                var file = new FileInfo(attachment.Filename);
+                var file = new FileInfo(uri.LocalPath);
                 using (var stream = new MemoryStream(bytes))
                 {
                     var hash = await SHA1.ComputeHashAsync(stream);
