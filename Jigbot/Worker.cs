@@ -33,6 +33,7 @@ namespace Jigbot
         private readonly Emoji Check;
         private readonly SHA1CryptoServiceProvider SHA1;
         private readonly Regex HasUrl;
+        private ConcurrentDictionary<ulong, bool> Randomize;
         private ConcurrentDictionary<ulong, ulong> History;
         private string[] Data;
 
@@ -63,6 +64,7 @@ namespace Jigbot
             random = new Random();
             History = new ConcurrentDictionary<ulong, ulong>();
             NoManageMessages = new ConcurrentBag<ulong>();
+            Randomize = new ConcurrentDictionary<ulong, bool>();
             CommandX = new Regex(@"\!" + Regex.Escape(Command) + @"[\s]*(.*)", RegexOptions.IgnoreCase);
 
             discord = new DiscordSocketClient(new DiscordSocketConfig
@@ -130,6 +132,7 @@ namespace Jigbot
             }
 
             var channel = message.Channel;
+            var content = message.Content.Trim().ToLower();
 
             if (message.Content == "!purgeall")
             {
@@ -174,6 +177,43 @@ namespace Jigbot
 
                 await DeleteCommandMessage(message);
 
+                return;
+            }
+
+            if (content.Length >= 7 && content.Substring(0, 7) == "!random")
+            {
+                var cmd = content.Length >= 9 ? message.Content.Substring(8) : null;
+                var enabled = Randomize.GetOrAdd(message.Channel.Id, false);
+
+                switch (cmd)
+                {
+                    case "status":
+                        await message.Channel.SendMessageAsync($"Randomizer is: {(enabled ? "Enable" : "Disabled")}");
+                        break;
+                    case "on":
+                        if (Randomize.TryUpdate(message.Channel.Id, true, false))
+                        {
+                            await message.Channel.SendMessageAsync($"Randomizer enable");
+                        }
+                        else
+                        {
+                            await message.Channel.SendMessageAsync($"Randomizer is already enable");
+                        }
+                        break;
+                    case "off":
+                        if (Randomize.TryUpdate(message.Channel.Id, false, true))
+                        {
+                            await message.Channel.SendMessageAsync($"Randomizer disabled");
+                        }
+                        else
+                        {
+                            await message.Channel.SendMessageAsync($"Randomizer is already disable");
+                        }
+                        break;
+                    default:
+                        await message.Channel.SendMessageAsync($"!random on|off|status");
+                        break;
+                }
                 return;
             }
 
@@ -225,25 +265,7 @@ namespace Jigbot
 
                 if (message.Attachments.Count == 0 && message.Embeds.Count == 0)
                 {
-                    var index = random.Next(0, Data.Length - 1);
-                    var file = Data[index];
-                    RestUserMessage result = null;
-
-                    switch (UriBase.Scheme)
-                    {
-                        case "file":
-                            var info = new FileInfo(file);
-                            result = await message.Channel.SendFileAsync(Data[index], info.Name);
-                            break;
-                        case "http":
-                        case "https":
-                            var request = WebRequest.Create(UriBase + file);
-                            using (var response = await request.GetResponseAsync())
-                            {
-                                result = await message.Channel.SendFileAsync(response.GetResponseStream(), file);
-                            }
-                            break;
-                    }
+                    var result = await RandomImage(message.Channel);
 
                     if (result != null)
                     {
@@ -351,6 +373,40 @@ namespace Jigbot
             }
         }
 
+        private Task<IUserMessage> RandomImage(ulong channelId)
+        {
+            var channel = discord.GetChannel(channelId);
+
+            if (channel is IMessageChannel messageChannel)
+            {
+                return RandomImage(messageChannel);
+            }
+
+            throw new Exception("Unsupported Channel");
+        }
+
+        private async Task<IUserMessage> RandomImage(IMessageChannel channel)
+        {
+            var index = random.Next(0, Data.Length - 1);
+            var file = Data[index];
+
+            switch (UriBase.Scheme)
+            {
+                case "file":
+                    var info = new FileInfo(file);
+                    return await channel.SendFileAsync(Data[index], info.Name);
+                case "http":
+                case "https":
+                    var request = WebRequest.Create(UriBase + file);
+                    using (var response = await request.GetResponseAsync())
+                    {
+                        return await channel.SendFileAsync(response.GetResponseStream(), file);
+                    }
+            }
+
+            throw new Exception("Unknown Scheme");
+        }
+
         private Task Discord_Ready()
         {
             logger.LogInformation($"{discord.CurrentUser} is connected!");
@@ -402,6 +458,13 @@ namespace Jigbot
 
             while (!stoppingToken.WaitHandle.WaitOne(5000))
             {
+                foreach (var channel in Randomize.Where(pair => pair.Value).Select(pair => pair.Key))
+                {
+                    if (random.Next(3600) == 1800)
+                    {
+                        await RandomImage(channel);
+                    }
+                }
             }
         }
     }
