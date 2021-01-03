@@ -40,7 +40,7 @@ namespace Jigbot
         public Worker(ILogger<Worker> logger)
         {
             this.logger = logger;
-            Command = Environment.GetEnvironmentVariable("Command");
+            Command = Environment.GetEnvironmentVariable("Command")?.ToLower();
             UriBase = new Uri(Environment.GetEnvironmentVariable("URIBASE"));
 
             var uploads = Environment.GetEnvironmentVariable("UPLOADS");
@@ -163,6 +163,8 @@ namespace Jigbot
                     }
                 }
 
+                logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested purgeall");
+
                 await DeleteCommandMessage(message);
 
                 return;
@@ -174,6 +176,8 @@ namespace Jigbot
                 {
                     await channel.DeleteMessageAsync(id);
                 }
+
+                logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested purge");
 
                 await DeleteCommandMessage(message);
 
@@ -214,6 +218,9 @@ namespace Jigbot
                         await message.Channel.SendMessageAsync($"!random on|off|status");
                         break;
                 }
+
+                logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested random {cmd}");
+
                 return;
             }
 
@@ -265,12 +272,17 @@ namespace Jigbot
 
                 if (message.Attachments.Count == 0 && message.Embeds.Count == 0)
                 {
-                    var result = await RandomImage(message.Channel);
+                    var result = await RandomImage(message.Channel, message.Author.Mention);
 
                     if (result != null)
                     {
+                        logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested {Command}");
                         History.AddOrUpdate(message.Author.Id, result.Id, (key, old) => result.Id);
-                        await DeleteCommandMessage(message);
+
+                        if (content == $"!{Command}")
+                        {
+                            await DeleteCommandMessage(message);
+                        }
                     }
                 }
 
@@ -295,6 +307,7 @@ namespace Jigbot
                     case ".jpeg":
                     case ".gif":
                     case ".png":
+                        logger.LogInformation($"Downloaded {uri} from {message.Author.Username} (#{message.Author.Id})");
                         tasks[i++] = Download(uri);
                         react = true;
                         break;
@@ -379,13 +392,18 @@ namespace Jigbot
 
             if (channel is IMessageChannel messageChannel)
             {
-                return RandomImage(messageChannel);
+                return RandomImage(messageChannel, null);
             }
 
             throw new Exception("Unsupported Channel");
         }
 
-        private async Task<IUserMessage> RandomImage(IMessageChannel channel)
+        private Task<IUserMessage> RandomImage(IMessageChannel channel)
+        {
+            return RandomImage(channel, null);
+        }
+
+        private async Task<IUserMessage> RandomImage(IMessageChannel channel, string text = null)
         {
             var index = random.Next(0, Data.Length - 1);
             var file = Data[index];
@@ -394,13 +412,13 @@ namespace Jigbot
             {
                 case "file":
                     var info = new FileInfo(file);
-                    return await channel.SendFileAsync(Data[index], info.Name);
+                    return await channel.SendFileAsync(Data[index], text);
                 case "http":
                 case "https":
                     var request = WebRequest.Create(UriBase + file);
                     using (var response = await request.GetResponseAsync())
                     {
-                        return await channel.SendFileAsync(response.GetResponseStream(), file);
+                        return await channel.SendFileAsync(response.GetResponseStream(), file, text);
                     }
             }
 
