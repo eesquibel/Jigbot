@@ -1,10 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk.Worker">
+﻿<Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
     <UserSecretsId>dotnet-Jigbot-8C9E5FA3-D563-4778-870D-EC19E3E808A6</UserSecretsId>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 	  <DockerfileFile>Dockerfile-$(DockerDefaultTargetOS)</DockerfileFile>
+    <DefineConstants>$(ETCD)</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>TRACE;ETCD</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,5 +17,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="5.0.0" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.10.8" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(DefineConstants.Contains('ETCD'))">
+    <PackageReference Include="dotnet-etcd" Version="4.2.0" />
   </ItemGroup>
 </Project>

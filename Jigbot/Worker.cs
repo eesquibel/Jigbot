@@ -1,6 +1,5 @@
 using Discord;
 using Discord.Net;
-using Discord.Rest;
 using Discord.WebSocket;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,6 +15,9 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+#if ETCD
+using dotnet_etcd;
+#endif
 
 namespace Jigbot
 {
@@ -33,6 +35,10 @@ namespace Jigbot
         private readonly Emoji Check;
         private readonly SHA1CryptoServiceProvider SHA1;
         private readonly Regex HasUrl;
+#if ETCD
+        private readonly string etcdPrefix;
+        private readonly EtcdClient etcd;
+#endif
         private ConcurrentDictionary<ulong, bool> Randomize;
         private ConcurrentDictionary<ulong, ulong> History;
         private string[] Data;
@@ -60,6 +66,28 @@ namespace Jigbot
                     logger.LogError("UPLOADS directory does not exist: {uplodas}", new { uploads });
                 }
             }
+
+#if ETCD          
+            var etcdUrl = Environment.GetEnvironmentVariable("ETCD");
+            logger.LogInformation("ETCD support is compiled");
+            if (string.IsNullOrEmpty(etcdUrl))
+            {
+                logger.LogInformation("ETCD is disabled");
+            }
+            else
+            {
+                try
+                {
+                    logger.LogInformation($"ETCD is using {etcdUrl}");
+                    etcdPrefix = $"jigbot/{Command}";
+                    etcd = new EtcdClient(etcdUrl);
+                }
+                catch (Exception e)
+                {
+                    logger.LogError(e, e.Message);
+                }
+            }
+#endif
 
             random = new Random();
             History = new ConcurrentDictionary<ulong, ulong>();
@@ -163,7 +191,7 @@ namespace Jigbot
                     }
                 }
 
-                logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested purgeall");
+                logger.LogInformation($"User {message.Author.Username} <#{message.Author.Id}> requested purgeall");
 
                 await DeleteCommandMessage(message);
 
@@ -177,7 +205,7 @@ namespace Jigbot
                     await channel.DeleteMessageAsync(id);
                 }
 
-                logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested purge");
+                logger.LogInformation($"User {message.Author.Username} <#{message.Author.Id}> requested purge");
 
                 await DeleteCommandMessage(message);
 
@@ -198,6 +226,7 @@ namespace Jigbot
                         if (Randomize.TryUpdate(message.Channel.Id, true, false))
                         {
                             await message.Channel.SendMessageAsync($"Randomizer enable");
+                            enabled = true;
                         }
                         else
                         {
@@ -208,6 +237,7 @@ namespace Jigbot
                         if (Randomize.TryUpdate(message.Channel.Id, false, true))
                         {
                             await message.Channel.SendMessageAsync($"Randomizer disabled");
+                            enabled = false;
                         }
                         else
                         {
@@ -220,6 +250,20 @@ namespace Jigbot
                 }
 
                 logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested random {cmd}");
+
+#if ETCD
+                if (etcd is EtcdClient)
+                {
+                    try
+                    {
+                        await etcd.PutAsync($"{etcdPrefix}/Randomizer/{message.Channel.Id}", enabled.ToString());
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogError(e, e.Message);
+                    }
+                }
+#endif
 
                 return;
             }
@@ -276,7 +320,7 @@ namespace Jigbot
 
                     if (result != null)
                     {
-                        logger.LogInformation($"User {message.Author.Username} (#{message.Author.Id}) requested {Command}");
+                        logger.LogInformation($"User {message.Author.Username} <#{message.Author.Id}> requested {Command}");
                         History.AddOrUpdate(message.Author.Id, result.Id, (key, old) => result.Id);
 
                         if (content == $"!{Command}")
@@ -307,7 +351,7 @@ namespace Jigbot
                     case ".jpeg":
                     case ".gif":
                     case ".png":
-                        logger.LogInformation($"Downloaded {uri} from {message.Author.Username} (#{message.Author.Id})");
+                        logger.LogInformation($"Downloaded {uri} from {message.Author.Username} <#{message.Author.Id}>");
                         tasks[i++] = Download(uri);
                         react = true;
                         break;
@@ -411,11 +455,12 @@ namespace Jigbot
             switch (UriBase.Scheme)
             {
                 case "file":
-                    var info = new FileInfo(file);
-                    return await channel.SendFileAsync(Data[index], text);
+                    logger.LogInformation($"RandomImage for {channel.Name} <#{channel.Id}>: {file}");
+                    return await channel.SendFileAsync(file, text);
                 case "http":
                 case "https":
                     var request = WebRequest.Create(UriBase + file);
+                    logger.LogInformation($"RandomImage for {channel.Name} <#{channel.Id}>: {UriBase + file}");
                     using (var response = await request.GetResponseAsync())
                     {
                         return await channel.SendFileAsync(response.GetResponseStream(), file, text);
@@ -473,6 +518,61 @@ namespace Jigbot
 
             await discord.LoginAsync(TokenType.Bot, Environment.GetEnvironmentVariable("Token"));
             await discord.StartAsync();
+
+#if ETCD
+            try
+            {
+                if (etcd is EtcdClient)
+                {
+                    logger.LogInformation("Loading configuration from ETCD");
+
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                    etcd.GetRangeValAsync($"{etcdPrefix}/Randomizer/", null, null, stoppingToken).ContinueWith(task =>
+                    {
+                        if (task.Exception != null)
+                        {
+                            logger.LogError(task.Exception, task.Exception.Message);
+                            return;
+                        }
+
+                        var channelMatch = new Regex($@"^{Regex.Escape($"{etcdPrefix}/Randomizer/")}(?<channel>[\d]+)$");
+
+                        foreach (var (Key, Value) in task.Result)
+                        {
+                            ulong channel;
+                            bool randomize;
+
+                            var match = channelMatch.Match(Key);
+
+                            if (!match.Success)
+                            {
+                                continue;
+                            }
+
+                            if (!ulong.TryParse(match.Groups["channel"].Value, out channel))
+                            {
+                                continue;
+                            }
+
+                            if (!bool.TryParse(Value, out randomize))
+                            {
+                                continue;
+                            }
+
+                            logger.LogInformation($"Loading configuration from {Key}");
+
+                            Randomize.AddOrUpdate(channel, randomize, (k, o) => randomize);
+                        }
+                    }, stoppingToken);
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, e.Message);
+            }
+#endif
 
             while (!stoppingToken.WaitHandle.WaitOne(5000))
             {

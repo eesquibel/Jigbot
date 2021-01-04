@@ -2,15 +2,17 @@ FROM mcr.microsoft.com/dotnet/runtime:5.0-nanoserver-20H2 AS base
 WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:5.0-nanoserver-20H2 AS build
+ARG ETCD="ETCD"
 WORKDIR /src
 COPY ["Jigbot/Jigbot.csproj", "Jigbot/"]
-RUN dotnet restore "Jigbot/Jigbot.csproj"
+RUN dotnet restore -property:ETCD=${ETCD} "Jigbot/Jigbot.csproj"
 COPY . .
 WORKDIR "/src/Jigbot"
-RUN dotnet build "Jigbot.csproj" -c Release -o /app/build
+RUN dotnet build -property:ETCD=${ETCD} --configuration Release --output /app/build "Jigbot.csproj"
 
 FROM build AS publish
-RUN dotnet publish "Jigbot.csproj" -c Release -o /app/publish
+ARG ETCD="ETCD"
+RUN dotnet publish -property:ETCD=${ETCD} --configuration Release --output /app/publish "Jigbot.csproj"
 
 FROM base AS final
 ENV Token=""
