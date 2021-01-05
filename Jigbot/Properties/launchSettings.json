@@ -3,10 +3,12 @@
     "Jigbot": {
       "commandName": "Project",
       "environmentVariables": {
-        "UPLOADS": "D:\\Temp",
         "DOTNET_ENVIRONMENT": "Development",
-        "Command": "test",
+        "UPLOADS": "D:\\Temp",
+        "COMMAND": "test",
         "URIBASE": "D:\\Temp",
+        "ETCD_PREFIX": "jigbot/test",
+        "ETCD_URL": "http://localhost:2379",
         "Token": "token"
       }
     },
