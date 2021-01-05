@@ -18,7 +18,9 @@ RUN dotnet publish -property:ETCD=${ETCD} --configuration Release --output /app/
 
 FROM base AS final
 ENV Token=""
-ENV Command=""
+ENV ETCD_URL=""
+ENV ETCD_PREFIX=""
+ENV COMMAND=""
 ENV URIBASE=""
 ENV UPLOADS=""
 VOLUME /var/local/jigbot/uploads
