@@ -1,24 +1,17 @@
 using Discord;
-using Discord.WebSocket;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System;
-using System.Collections.Concurrent;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Security.Cryptography;
-using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 using Discord.Commands;
-using Microsoft.Extensions.DependencyInjection;
-using System.Reflection;
+using Discord.WebSocket;
+using Jigbot.Modules;
 using Jigbot.Services;
 using Jigbot.States;
-using Jigbot.Modules;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Linq;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Jigbot
 {

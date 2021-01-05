@@ -1,11 +1,4 @@
-﻿using Discord;
-using Discord.Net;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Concurrent;
-using System.Linq;
-using System.Net;
-using System.Threading.Tasks;
+﻿using System.Collections.Concurrent;
 
 namespace Jigbot.States
 {
