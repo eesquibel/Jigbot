@@ -37,7 +37,7 @@ namespace Jigbot.Modules
         {
             if (Randomize.TryUpdate(Context.Channel.Id, RandomStatus.On, State))
             {
-                await ReplyAsync($"Randomizer enable");
+                await ReplyAsync($"Randomizer is now enable");
             }
             else
             {
@@ -51,7 +51,7 @@ namespace Jigbot.Modules
 
             if (Randomize.TryUpdate(Context.Channel.Id, RandomStatus.Off, State))
             {
-                await ReplyAsync($"Randomizer disabled");
+                await ReplyAsync($"Randomizer is now disabled");
             }
             else
             {
@@ -64,7 +64,7 @@ namespace Jigbot.Modules
         {
             if (Randomize.TryUpdate(Context.Channel.Id, RandomStatus.Safe, State))
             {
-                await ReplyAsync($"Randomizer safe-for-work");
+                await ReplyAsync($"Randomizer is now safe-for-work");
             }
             else
             {
