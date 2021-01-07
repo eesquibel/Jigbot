@@ -13,18 +13,25 @@ namespace Jigbot.Modules
         public ManageMessagesService ManageMessages { get; set; }
         public RandomizeState Randomize { get; set; }
         
+        public RandomizeFrequency RandomFrequency { get; set; }
+
         private RandomStatus State;
+
+        private uint Frequency;
         
         protected override void BeforeExecute(CommandInfo command)
         {
             base.BeforeExecute(command);
             State = Randomize.GetOrAdd(Context.Channel.Id, RandomStatus.Off);
+            Frequency = RandomFrequency.GetOrAdd(Context.Channel.Id, 720 * 4);
         }
 
         protected override void AfterExecute(CommandInfo command)
         {
             base.AfterExecute(command);
-            
+
+            ManageMessages.DeleteCommandMessage(Context.Message).GetAwaiter().GetResult();
+
             logger.LogInformation($"User {Context.Message.Author.Username} (#{Context.Message.Author.Id}) requested random {command.Name}");
         }
 
@@ -85,10 +92,25 @@ namespace Jigbot.Modules
             }
         }
 
+        [Command("#")]
+        public async Task SetFrequency()
+        {
+            await ReplyAsync($"Randomizer frequency is {Frequency}");
+        }
+
+        [Command("#"), Alias("")]
+        public async Task SetFrequency(uint newValue)
+        {
+            RandomFrequency.TryUpdate(Context.Channel.Id, newValue, Frequency);
+
+            await ReplyAsync($"Randomizer frequency set to {newValue}");
+        }
+
+
         [Command()]
         public async Task Usage()
         {
-            await ReplyAsync($"!random on|off|safe|status");
+            await ReplyAsync($"!random on|off|safe|status|#");
         }
     }
 }

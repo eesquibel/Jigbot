@@ -128,6 +128,7 @@ namespace Jigbot
                 .AddSingleton<ImagesState>()
                 .AddSingleton<HistoryState>()
                 .AddSingleton<RandomizeState>()
+                .AddSingleton<RandomizeFrequency>()
                 .AddSingleton<NoManageMessagesState>()
                 .AddSingleton<RandomImageService>()
                 .AddSingleton<ManageMessagesService>()

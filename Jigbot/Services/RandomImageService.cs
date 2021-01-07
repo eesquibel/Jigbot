@@ -16,6 +16,7 @@ namespace Jigbot.Services
         private HistoryState History;
         private DiscordSocketClient Discord;
         private ManageMessagesService ManageMessages;
+        private RandomizeFrequency RandomFrequency;
 
         private readonly Random random = new Random();
 
@@ -26,6 +27,7 @@ namespace Jigbot.Services
             History = services.GetService<HistoryState>();
             Discord = services.GetService<DiscordSocketClient>();
             ManageMessages = services.GetService<ManageMessagesService>();
+            RandomFrequency = services.GetService<RandomizeFrequency>();
         }
 
         public async Task RandomImage(ulong channel, RandomStatus state)
@@ -35,7 +37,9 @@ namespace Jigbot.Services
                 return;
             }
 
-            if (random.Next(2160) != 1080)
+            var frequency = RandomFrequency.GetOrAdd(channel, 720 * 4);
+
+            if (random.Next((int)frequency) != 1)
             {
                 return;
             }
