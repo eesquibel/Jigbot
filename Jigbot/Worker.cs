@@ -171,7 +171,17 @@ namespace Jigbot
                             return CommandModule.Execute(context, param, service, command);
                         }, builder =>
                         {
+                        });
 
+                        builder.AddCommand("", (context, param, service, command) =>
+                        {
+                            return CommandModule.Execute(context, param, service, command);
+                        }, builder =>
+                        {
+                            builder.AddParameter<string>("message", param =>
+                            {
+                                param.IsRemainder = true;
+                            });
                         });
                     });
 
