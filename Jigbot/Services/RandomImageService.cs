@@ -44,21 +44,29 @@ namespace Jigbot.Services
                 return;
             }
 
+            var spoiler = false;
+
             if (state == RandomStatus.Safe)
             {
                 var now = DateTime.UtcNow;
                 if (now.Hour > 15 || now.Hour < 1)
                 {
-                    return;
+                    spoiler = true;
                 }
             }
 
-            await RandomImage(channel);
+            await RandomImage(channel, spoiler);
         }
+
+        public Task RandomImage(IUserMessage message, bool spoiler)
+        {
+            return RandomImage(message, spoiler);
+        }
+
 
         public async Task RandomImage(IUserMessage message)
         {
-            var result = await RandomImage(message.Channel, message.Author.Mention);
+            var result = await RandomImage(message.Channel, message.Author.Mention, false);
 
             if (result != null)
             {
@@ -75,7 +83,19 @@ namespace Jigbot.Services
 
             if (channel is IMessageChannel messageChannel)
             {
-                return RandomImage(messageChannel, null);
+                return RandomImage(messageChannel, null, false);
+            }
+
+            throw new Exception("Unsupported Channel");
+        }
+
+        public Task<IUserMessage> RandomImage(ulong channelId, bool spoiler)
+        {
+            var channel = Discord.GetChannel(channelId);
+
+            if (channel is IMessageChannel messageChannel)
+            {
+                return RandomImage(messageChannel, null, spoiler);
             }
 
             throw new Exception("Unsupported Channel");
@@ -83,10 +103,10 @@ namespace Jigbot.Services
 
         public Task<IUserMessage> RandomImage(IMessageChannel channel)
         {
-            return RandomImage(channel, null);
+            return RandomImage(channel, null, false);
         }
 
-        public async Task<IUserMessage> RandomImage(IMessageChannel channel, string text = null)
+        public async Task<IUserMessage> RandomImage(IMessageChannel channel, string text = null, bool spoiler = false)
         {
             var index = random.Next(0, Images.Count - 1);
             var file = Images[index];
@@ -95,14 +115,14 @@ namespace Jigbot.Services
             {
                 case "file":
                     logger.LogInformation($"RandomImage for {channel.Name} <#{channel.Id}>: {file}");
-                    return await channel.SendFileAsync(file, text);
+                    return await channel.SendFileAsync(file, text, false, null, null, spoiler);
                 case "http":
                 case "https":
                     var request = WebRequest.Create(Images.UriBase + file);
                     logger.LogInformation($"RandomImage for {channel.Name} <#{channel.Id}>: {Images.UriBase + file}");
                     using (var response = await request.GetResponseAsync())
                     {
-                        return await channel.SendFileAsync(response.GetResponseStream(), file, text);
+                        return await channel.SendFileAsync(response.GetResponseStream(), file, text, false, null, null, spoiler);
                     }
             }
 

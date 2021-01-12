@@ -1,6 +1,7 @@
 ﻿using Discord;
 using Discord.Commands;
 using Jigbot.Services;
+using Jigbot.States;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
@@ -20,6 +21,7 @@ namespace Jigbot.Modules
             var logger = service.GetService<ILogger>();
             var randomImage = service.GetService<RandomImageService>();
             var uploads = service.GetService<UploadService>();
+            var random = service.GetService<RandomizeState>();
 
             if (Context.Message.Attachments.Count > 0 && uploads.Enabled)
             {
@@ -53,15 +55,30 @@ namespace Jigbot.Modules
 
             if (Context.Message.Attachments.Count == 0 && Context.Message.Embeds.Count == 0)
             {
-                if (param[0] is string message)
+                if (param.Length > 0)
                 {
-                    if (hasUrl.IsMatch(message))
+                    if (param[0] is string message)
                     {
-                        return;
+                        if (hasUrl.IsMatch(message))
+                        {
+                            return;
+                        }
                     }
                 }
 
-                await randomImage.RandomImage(Context.Message);
+                var state = random.GetOrAdd(Context.Channel.Id, RandomStatus.Off);
+                var spoiler = false;
+
+                if (state == RandomStatus.Safe)
+                {
+                    var now = DateTime.UtcNow;
+                    if (now.Hour > 15 || now.Hour < 1)
+                    {
+                        spoiler = true;
+                    }
+                }
+
+                await randomImage.RandomImage(Context.Message, spoiler);
                 return;
             }
         }
