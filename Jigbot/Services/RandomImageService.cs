@@ -58,15 +58,14 @@ namespace Jigbot.Services
             await RandomImage(channel, spoiler);
         }
 
-        public Task RandomImage(IUserMessage message, bool spoiler)
+        public Task RandomImage(IUserMessage message)
         {
-            return RandomImage(message, spoiler);
+            return RandomImage(message, false);
         }
 
-
-        public async Task RandomImage(IUserMessage message)
+        public async Task RandomImage(IUserMessage message, bool spoiler)
         {
-            var result = await RandomImage(message.Channel, message.Author.Mention, false);
+            var result = await RandomImage(message.Channel, message.Author.Mention, spoiler);
 
             if (result != null)
             {
