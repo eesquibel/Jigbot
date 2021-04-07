@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 #if ETCD
 using dotnet_etcd;
-using Microsoft.Extensions.Logging;
 #endif
 
 namespace Jigbot.Services

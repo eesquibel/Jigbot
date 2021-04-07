@@ -1,0 +1,44 @@
+#See https://aka.ms/containerfastmode to understand how Visual Studio uses this Dockerfile to build your images for faster debugging.
+
+FROM mcr.microsoft.com/dotnet/runtime:5.0-alpine AS base
+WORKDIR /app
+
+FROM mcr.microsoft.com/dotnet/sdk:5.0 AS build
+
+ARG ETCD="ETCD"
+
+WORKDIR /src
+
+COPY ["Jigbot/Jigbot.csproj", "Jigbot/"]
+
+RUN dotnet restore -property:ETCD=${ETCD} "Jigbot/Jigbot.csproj"
+
+COPY . .
+
+WORKDIR "/src/Jigbot"
+
+RUN dotnet build -property:ETCD=${ETCD} --configuration Release --output /app/build "Jigbot.csproj"
+
+FROM build AS publish
+
+ARG ETCD="ETCD"
+
+RUN dotnet publish -property:ETCD=${ETCD} --configuration Release --output /app/publish "Jigbot.csproj"
+
+FROM base AS final
+
+ENV Token=""
+ENV ETCD_URL=""
+ENV ETCD_PREFIX=""
+ENV COMMAND=""
+ENV URIBASE=""
+ENV UPLOADS=""
+
+VOLUME /var/local/jigbot/uploads
+VOLUME /var/local/jigbot/images
+
+WORKDIR /app
+
+COPY --from=publish /app/publish .
+
+ENTRYPOINT ["dotnet", "Jigbot.dll"]
