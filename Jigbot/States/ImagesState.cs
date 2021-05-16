@@ -4,61 +4,95 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
 
 namespace Jigbot.States
 {
-    public class ImagesState : IReadOnlyCollection<string>
+    public class ImagesState : IReadOnlyDictionary<int, string[]>
     {
-        private string[] Data;
-        public readonly Uri UriBase;
-
-        public string Scheme => UriBase.Scheme;
+        private string[][] Data;
+        public readonly Uri[] UriBase;
 
         public int Count => Data.Length;
 
         public ImagesState(ILogger logger)
         {
-            UriBase = new Uri(Environment.GetEnvironmentVariable("URIBASE"));
-
-            switch (UriBase.Scheme)
+            UriBase = Environment.GetEnvironmentVariable("URIBASE").Split(";").Select(uri =>
             {
-                case "file":
-                    if (!Directory.Exists(UriBase.LocalPath))
-                    {
-                        logger.LogError("Directoy does not exist: {UriBase}", new { UriBase });
-                        return;
-                    }
+                return new Uri(uri);
+            }).ToArray();
 
-                    Data = Directory.GetFiles(UriBase.LocalPath, "*.*", SearchOption.TopDirectoryOnly);
+            Data = new string[UriBase.Length][];
 
-                    break;
-                case "http":
-                case "https":
-                    var request = WebRequest.Create(UriBase);
-                    using (var response = request.GetResponse())
-                    {
-                        using (var reader = new StreamReader(response.GetResponseStream()))
+            for (var index = 0; index < UriBase.Length; index++)
+            {
+                var uri = UriBase[index];
+
+                switch (uri.Scheme)
+                {
+                    case "file":
+                        if (!Directory.Exists(uri.LocalPath))
                         {
-                            using (var json = new JsonTextReader(reader))
+                            logger.LogError("Directoy does not exist: {uri}", new { uri });
+                            return;
+                        }
+
+                        Data[index] = Directory.GetFiles(uri.LocalPath, "*.*", SearchOption.TopDirectoryOnly);
+
+                        break;
+                    case "http":
+                    case "https":
+                        var request = WebRequest.Create(uri);
+                        using (var response = request.GetResponse())
+                        {
+                            using (var reader = new StreamReader(response.GetResponseStream()))
                             {
-                                var data = (JArray)JToken.ReadFrom(json);
-                                Data = data.Select(item => item.Value<string>("name")).ToArray();
+                                using (var json = new JsonTextReader(reader))
+                                {
+                                    var data = (JArray)JToken.ReadFrom(json);
+                                    Data[index] = data.Select(item => item.Value<string>("name")).ToArray();
+                                }
                             }
                         }
-                    }
 
-                    break;
+                        break;
+                }
+
+                logger.LogInformation($"Found {Data[index].Length} images at {uri}");
             }
 
-            logger.LogInformation($"Found {Data.Length} images");
         }
 
-        public IEnumerator<string> GetEnumerator()
+        public IEnumerable<int> Keys => Enumerable.Range(0, Data.Length - 1);
+
+        public IEnumerable<string[]> Values => Data;
+
+        public bool ContainsKey(int key)
         {
-            return Data.AsEnumerable().GetEnumerator();
+            return key >= 0 && key <= Data.Length;
+        }
+
+        public bool TryGetValue(int key, [MaybeNullWhen(false)] out string[] value)
+        {
+            if (key >= 0 && key <= Data.Length)
+            {
+                if (Data[key] is string[])
+                {
+                    value = Data[key];
+                    return true;
+                }
+            }
+
+            value = null;
+            return false;
+        }
+
+        public IEnumerator<KeyValuePair<int, string[]>> GetEnumerator()
+        {
+            return Data.Select((value, index) => KeyValuePair.Create(index, value)).GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -66,7 +100,7 @@ namespace Jigbot.States
             return Data.GetEnumerator();
         }
 
-        public string this[int index]
+        public string[] this[int index]
         {
             get => Data[index];
         }

@@ -12,6 +12,8 @@ namespace Jigbot.Services
     public class RandomImageService
     {
         private ILogger logger;
+        private ConfigService Config;
+        private EnabledCommandState CommandState;
         private ImagesState Images;
         private HistoryState History;
         private DiscordSocketClient Discord;
@@ -23,6 +25,8 @@ namespace Jigbot.Services
         public RandomImageService(IServiceProvider services)
         {
             logger = services.GetService<ILogger>();
+            Config = services.GetService<ConfigService>();
+            CommandState = services.GetService<EnabledCommandState>();
             Images = services.GetService<ImagesState>();
             History = services.GetService<HistoryState>();
             Discord = services.GetService<DiscordSocketClient>();
@@ -107,10 +111,34 @@ namespace Jigbot.Services
 
         public async Task<IUserMessage> RandomImage(IMessageChannel channel, string text = null, bool spoiler = false)
         {
-            var index = random.Next(0, Images.Count - 1);
-            var file = Images[index];
+            if (!CommandState.ContainsKey(channel.Id))
+            {
+                return null;
+            }
 
-            switch (Images.Scheme)
+            var cmd = CommandState[channel.Id];
+
+            if (cmd == null)
+            {
+                return null;
+            }
+
+            var index = Config.GetIndex(cmd);
+
+            if (index == -1)
+            {
+                return null;
+            }
+
+            if (Images[index] == null)
+            {
+                return null;
+            }
+
+            var i = random.Next(0, Images[index].Length - 1);
+            var file = Images[index][i];
+
+            switch (Images.UriBase[index].Scheme)
             {
                 case "file":
                     logger.LogInformation($"RandomImage for {channel.Name} <#{channel.Id}>: {file}");

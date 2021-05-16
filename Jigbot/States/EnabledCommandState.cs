@@ -6,22 +6,15 @@ using System.Text.RegularExpressions;
 
 namespace Jigbot.States
 {
-    public enum RandomStatus : byte
-    {
-        Off,
-        On,
-        Safe
-    }
-
-    public class RandomizeState : ConcurrentDictionary<ulong, RandomStatus>
+    public class EnabledCommandState : ConcurrentDictionary<ulong, string>
     {
         private readonly ConfigService configService;
 
-        public RandomizeState(ConfigService configService, ILogger logger)
+        public EnabledCommandState(ConfigService configService, ILogger logger)
         {
             this.configService = configService;
 
-            configService.GetRange("Randomize").ContinueWith(task =>
+            configService.GetRange("Command").ContinueWith(task =>
             {
                 if (task.Exception != null)
                 {
@@ -29,12 +22,11 @@ namespace Jigbot.States
                     return;
                 }
 
-                var channelMatch = new Regex($@"^.*{Regex.Escape("/Randomize/")}(?<channel>[\d]+)$");
+                var channelMatch = new Regex($@"^.*{Regex.Escape("/Command/")}(?<channel>[\d]+)$");
 
                 foreach (var (Key, Value) in task.Result)
                 {
                     ulong channel;
-                    RandomStatus randomize;
 
                     var match = channelMatch.Match(Key);
 
@@ -48,23 +40,18 @@ namespace Jigbot.States
                         continue;
                     }
 
-                    if (!Enum.TryParse(Value, out randomize))
-                    {
-                        continue;
-                    }
-
                     logger.LogInformation($"Loading configuration from {Key}");
 
-                    AddOrUpdate(channel, randomize, (k, o) => randomize);
+                    AddOrUpdate(channel, Value, (k, o) => Value);
                 }
             });
         }
 
-        public new bool TryUpdate(ulong key, RandomStatus newValue, RandomStatus comparisonValue)
+        public new bool TryUpdate(ulong key, string newValue, string comparisonValue)
         {
             var result = base.TryUpdate(key, newValue, comparisonValue);
 
-            configService.Put($"Randomize/{key}", newValue);
+            configService.Put($"Command/{key}", newValue);
 
             return result;
         }       

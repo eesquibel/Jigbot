@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using System.Threading;
+using Discord;
 #if ETCD
 using dotnet_etcd;
 #endif
@@ -13,7 +15,7 @@ namespace Jigbot.Services
     {
         public ILogger logger { get; set; }
 
-        public readonly string Command;
+        public readonly string[] Command;
 
 #if ETCD
         private readonly string etcdPrefix;
@@ -23,7 +25,8 @@ namespace Jigbot.Services
         public ConfigService(ILogger logger)
         {
             this.logger = logger;
-            Command = Environment.GetEnvironmentVariable("COMMAND")?.ToLower();
+
+            Command = Environment.GetEnvironmentVariable("COMMAND")?.ToLower().Split(";");
 #if ETCD
             logger.LogInformation("ETCD support is compiled");
 
@@ -46,6 +49,16 @@ namespace Jigbot.Services
                 }
             }
 #endif
+        }
+
+        public int GetIndex(string cmd)
+        {
+            return Array.IndexOf(Command, cmd);
+        }
+
+        public int GetIndex(IMessageChannel channel)
+        {
+            return 0;
         }
 
         public void Put(string key, object value)
@@ -86,13 +99,36 @@ namespace Jigbot.Services
 #endif
         }
 
-        public Task<IDictionary<string, string>> GetRange(string prefix)
+        public async Task<IDictionary<string, string>> GetRange(string prefix)
         {
 #if ETCD
-            return etcd.GetRangeValAsync($"{etcdPrefix}/{prefix}/");
-#else
-            return Task.FromResult(new Dictionary<string, string>(0) as IDictionary<string, string>);
+            if (etcd is EtcdClient)
+            {
+                int backoff = 2000;
+
+                retry:
+                try
+                {
+                    var results = await etcd.GetRangeValAsync($"{etcdPrefix}/{prefix}/");
+                    return results;
+                }
+                catch (Grpc.Core.RpcException e)
+                {
+                    if (e.StatusCode == Grpc.Core.StatusCode.Unavailable)
+                    {
+                        Thread.Sleep(backoff);
+
+                        if (backoff < 60000)
+                        {
+                            backoff += 2000;
+                        }
+
+                        goto retry;
+                    }
+                }
+            }
 #endif
+            return await Task.FromResult(new Dictionary<string, string>(0) as IDictionary<string, string>);
         }
     }
 }

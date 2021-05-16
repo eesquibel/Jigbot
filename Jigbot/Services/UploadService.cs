@@ -1,7 +1,9 @@
 ﻿using Discord;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
@@ -10,7 +12,7 @@ namespace Jigbot.Services
 {
     public class UploadService
     {
-        private readonly string Uploads;
+        private readonly string[] Uploads;
         private readonly WebClient WebClient;
         private readonly SHA1CryptoServiceProvider SHA1;
         private static readonly Emoji Check = new Emoji("\u2611\uFE0F");
@@ -23,24 +25,41 @@ namespace Jigbot.Services
         {
             this.logger = logger;
             var uploads = Environment.GetEnvironmentVariable("UPLOADS");
+            var list = new SortedList<int, string>();
+            var i = 0;
 
             if (!string.IsNullOrEmpty(uploads))
             {
-                if (Directory.Exists(uploads))
+                foreach (var dir in uploads.Split(";"))
                 {
-                    Uploads = (new DirectoryInfo(uploads)).FullName;
+                    if (Directory.Exists(dir))
+                    {
+                        list.Add(i++, (new DirectoryInfo(dir)).FullName);
+                    } else
+                    {
+                        try
+                        {
+                            var info = Directory.CreateDirectory(dir);
+                            list.Add(i++, info.FullName);
+                        }
+                        catch (Exception)
+                        {
+                            logger.LogError("UPLOADS directory does not exist: {dir}", new { dir });
+                        }
+                    }
+                }
+                
+                if (list.Count > 0)
+                {
+                    Uploads = list.Values.ToArray();
                     WebClient = new WebClient();
                     SHA1 = new SHA1CryptoServiceProvider();
                     Enabled = true;
                 }
-                else
-                {
-                    logger.LogError("UPLOADS directory does not exist: {uplodas}", new { uploads });
-                }
             }
         }
 
-        public async Task GetEmbeds(IMessage message)
+        public async Task GetEmbeds(IMessage message, int index)
         {
             if (!Enabled)
             {
@@ -63,7 +82,7 @@ namespace Jigbot.Services
                     case ".gif":
                     case ".png":
                         logger.LogInformation($"Downloaded {uri} from {message.Author.Username} <#{message.Author.Id}>");
-                        tasks[i++] = Get(uri);
+                        tasks[i++] = Get(uri, index);
                         react = true;
                         break;
                     default:
@@ -87,17 +106,17 @@ namespace Jigbot.Services
             }
         }
 
-        public Task Get(IAttachment attachment)
+        public Task Get(IAttachment attachment, int index)
         {
-            return Get(new Uri(attachment.Url));
+            return Get(new Uri(attachment.Url), index);
         }
 
-        public Task Get(string uri)
+        public Task Get(string uri, int index)
         {
-            return Get(new Uri(uri));
+            return Get(new Uri(uri), index);
         }
 
-        public async Task Get(Uri uri)
+        public async Task Get(Uri uri, int index)
         {
             if (!Enabled)
             {
@@ -107,7 +126,10 @@ namespace Jigbot.Services
             try
             {
                 var bytes = await WebClient.DownloadDataTaskAsync(uri);
-                var filename = Uploads + "/";
+
+                logger.LogInformation($"Downloaded {uri} ({bytes.Length} bytes)");
+
+                var filename = Uploads[index] + "/";
                 var file = new FileInfo(uri.LocalPath);
                 using (var stream = new MemoryStream(bytes))
                 {

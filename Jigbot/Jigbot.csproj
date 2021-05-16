@@ -5,6 +5,7 @@
     <UserSecretsId>dotnet-Jigbot-8C9E5FA3-D563-4778-870D-EC19E3E808A6</UserSecretsId>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 	  <DockerfileFile>Dockerfile-$(DockerDefaultTargetOS)</DockerfileFile>
+    <DockerfileRunArguments>--network jigbot --volume D:/Temp:/var/local/jigbot/images/test1  --volume D:/Temp:/var/local/jigbot/images/test2 --volume D:/Temp:/var/local/jigbot/uploads/test1  --volume D:/Temp:/var/local/jigbot/uploads/test2</DockerfileRunArguments>
     <DefineConstants>$(ETCD)</DefineConstants>
   </PropertyGroup>
 
@@ -16,9 +17,15 @@
     <PackageReference Include="Discord.Net.Commands" Version="2.3.1" />
     <PackageReference Include="Discord.Net.WebSocket" Version="2.3.1" />
     <PackageReference Include="dotnetcore-etcd" Version="4.2.0" />
-    <PackageReference Include="Grpc.Net.Client" Version="2.36.0" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.37.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="5.0.0" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.10.8" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="..\.dockerignore">
+      <DependentUpon>Dockerfile-Linux</DependentUpon>
+    </None>
   </ItemGroup>
 </Project>

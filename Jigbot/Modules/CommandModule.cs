@@ -16,41 +16,57 @@ namespace Jigbot.Modules
 
         private static readonly Emoji Check = new Emoji("\u2611\uFE0F");
 
-        public static async Task Execute(ICommandContext Context, object[] param, IServiceProvider service, CommandInfo command)
+        public static Task Execute(ICommandContext Context, object[] param, IServiceProvider service, CommandInfo command)
         {
             var logger = service.GetService<ILogger>();
             var randomImage = service.GetService<RandomImageService>();
             var uploads = service.GetService<UploadService>();
             var random = service.GetService<RandomizeState>();
+            var config = service.GetService<ConfigService>();
+            var index = config.GetIndex(command.Aliases[0]);
+
+            if (index == -1)
+            {
+                return Task.CompletedTask;
+            }
 
             if (Context.Message.Attachments.Count > 0 && uploads.Enabled)
             {
-                byte i = 0;
                 var tasks = new Task[Context.Message.Attachments.Count];
+                byte i = 0;
 
                 foreach (var attachment in Context.Message.Attachments)
                 {
-                    tasks[i++] = uploads.Get(attachment);
+                   tasks[i++] = uploads.Get(attachment, index);
                 }
 
-                Task.WaitAll(tasks);
-
-                try
+                Task.WhenAll(tasks).ContinueWith((task) =>
                 {
-                    await Context.Message.AddReactionAsync(Check);
-                }
-                catch (Exception e)
-                {
-                    logger.LogError(e, e.Message);
-                }
+                    try
+                    {
+                        if (task.IsCompletedSuccessfully)
+                        {
+                            _ = Context.Message.AddReactionAsync(Check);
+                        }
+                        else
+                        {
+                            throw task.Exception;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogError(e, e.Message);
+                    }
+                });
 
-                return;
+
+                return Task.CompletedTask;
             }
 
             if (Context.Message.Embeds.Count > 0 && uploads.Enabled)
             {
-                await uploads.GetEmbeds(Context.Message);
-                return;
+                _ = uploads.GetEmbeds(Context.Message, index);
+                return Task.CompletedTask;
             }
 
             if (Context.Message.Attachments.Count == 0 && Context.Message.Embeds.Count == 0)
@@ -61,7 +77,7 @@ namespace Jigbot.Modules
                     {
                         if (hasUrl.IsMatch(message))
                         {
-                            return;
+                            return Task.CompletedTask;
                         }
                     }
                 }
@@ -78,9 +94,10 @@ namespace Jigbot.Modules
                     }
                 }
 
-                await randomImage.RandomImage(Context.Message, spoiler);
-                return;
+                _ = randomImage.RandomImage(Context.Message, spoiler);
             }
+
+            return Task.CompletedTask;
         }
     }
 }

@@ -21,24 +21,25 @@ namespace Jigbot
         private DiscordSocketClient discord;
         private CommandService command;
         private ServiceProvider services;
+        private CancellationTokenSource cancellationToken;
 
         public Worker(ILogger<Worker> logger)
         {
             this.logger = logger;
         }
 
-        private async Task Discord_MessageUpdated(Cacheable<IMessage, ulong> cacheableBefore, SocketMessage after, ISocketMessageChannel channel)
+        private Task Discord_MessageUpdated(Cacheable<IMessage, ulong> cacheableBefore, SocketMessage after, ISocketMessageChannel channel)
         {
             // If original message not in cache, too old and we don't care about it
             if (!cacheableBefore.HasValue)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             // No embeds
             if (after.Embeds.Count == 0)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             var before = cacheableBefore.Value;
@@ -49,52 +50,63 @@ namespace Jigbot
             // Upload directory not set, nothing to do
             if (!uploads.Enabled)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             // Is a message we care about?
-            if ((after.Content ?? before.Content).StartsWith($"!{config.Command}", StringComparison.InvariantCultureIgnoreCase))
+            var cmd = after.Content ?? before.Content;
+
+            for (var index = 0; index < config.Command.Length; index++)
             {
-                // Are there new embeds able?
-                if (after.Embeds.Count <= before.Embeds.Count)
+                if (cmd.StartsWith($"!{config.Command[index]}", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    return;
-                }
+                    // Are there new embeds able?
+                    if (after.Embeds.Count <= before.Embeds.Count)
+                    {
+                        return Task.CompletedTask;
+                    }
 
-                // Have we processed this message before?
-                if (before.Reactions.Values.Any(reaction => reaction.IsMe))
-                {
-                    return;
-                }
+                    // Have we processed this message before?
+                    if (before.Reactions.Values.Any(reaction => reaction.IsMe))
+                    {
+                        return Task.CompletedTask;
+                    }
 
-                await uploads.GetEmbeds(after);
+                    _ = uploads.GetEmbeds(after, index);
+
+                    break;
+                }
             }
+
+            return Task.CompletedTask;
         }
 
-        private async Task Discord_MessageReceived(SocketMessage rawMessage)
+        private Task Discord_MessageReceived(SocketMessage rawMessage)
         {
             // Only respond to user messages
             if (!(rawMessage is SocketUserMessage message))
             {
-                return;
+                return Task.CompletedTask;
             }
 
             // The bot should never respond to itself.
             if (message.Author.Id == discord.CurrentUser.Id)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             int argPos = 0;
 
             if (!message.HasCharPrefix('!', ref argPos))
             {
-                return;
+                return Task.CompletedTask;
             }
 
             var context = new SocketCommandContext(discord, message);
 
-            await command.ExecuteAsync(context, argPos, services);
+            _ = command.ExecuteAsync(context, argPos, services);
+
+            return Task.CompletedTask;
         }
 
         private Task Discord_Ready()
@@ -125,6 +137,7 @@ namespace Jigbot
                 .AddSingleton(discordSocketClient)
                 .AddSingleton(commandService)
                 .AddSingleton<ConfigService>()
+                .AddSingleton<EnabledCommandState>()
                 .AddSingleton<ImagesState>()
                 .AddSingleton<HistoryState>()
                 .AddSingleton<RandomizeState>()
@@ -138,8 +151,10 @@ namespace Jigbot
                 .BuildServiceProvider();
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        protected override async Task ExecuteAsync(CancellationToken workerStoppingToken)
         {
+            using (cancellationToken = new CancellationTokenSource())
+            using (var stoppingToken = CancellationTokenSource.CreateLinkedTokenSource(workerStoppingToken, cancellationToken.Token))
             using (discord = new DiscordSocketClient(new DiscordSocketConfig
             {
                 /**
@@ -147,6 +162,7 @@ namespace Jigbot
                  * and to get embeds that are parsed asynchonously and sent via MESSAGE_UPDATE event
                  */
                 MessageCacheSize = 128,
+                DefaultRetryMode = RetryMode.AlwaysFail,
             }))
             {
                 discord.Log += Discord_Log;
@@ -164,34 +180,39 @@ namespace Jigbot
                     var config = services.GetService<ConfigService>();
 
                     await command.AddModulesAsync(Assembly.GetEntryAssembly(), services);
-                    await command.CreateModuleAsync(config.Command, builder =>
-                    {
-                        builder.AddCommand("", (context, param, service, command) =>
-                        {
-                            return CommandModule.Execute(context, param, service, command);
-                        }, builder =>
-                        {
-                        });
 
-                        builder.AddCommand("", (context, param, service, command) =>
+                    foreach (var cmd in config.Command)
+                    {
+                        await command.CreateModuleAsync(cmd, builder =>
                         {
-                            return CommandModule.Execute(context, param, service, command);
-                        }, builder =>
-                        {
-                            builder.AddParameter<string>("message", param =>
+                            builder.AddCommand("", (context, param, service, command) =>
                             {
-                                param.IsRemainder = true;
+                                return CommandModule.Execute(context, param, service, command);
+                            }, builder =>
+                            {
+                            });
+
+                            builder.AddCommand("", (context, param, service, command) =>
+                            {
+                                return CommandModule.Execute(context, param, service, command);
+                            }, builder =>
+                            {
+                                builder.AddParameter<string>("message", param =>
+                                {
+                                    param.IsRemainder = true;
+                                });
                             });
                         });
-                    });
+                    }
 
                     discord.MessageReceived += Discord_MessageReceived;
                     discord.MessageUpdated += Discord_MessageUpdated;
+                    discord.Disconnected += Discord_Disconnected;
 
                     await discord.LoginAsync(TokenType.Bot, Environment.GetEnvironmentVariable("Token"));
                     await discord.StartAsync();
 
-                    while (!stoppingToken.WaitHandle.WaitOne(5000))
+                    while (!stoppingToken.Token.WaitHandle.WaitOne(5000))
                     {
                         foreach (var (channel, state) in randomize.Where(pair => pair.Value != RandomStatus.Off))
                         {
@@ -201,11 +222,24 @@ namespace Jigbot
 
                     discord.MessageReceived -= Discord_MessageReceived;
                     discord.MessageUpdated -= Discord_MessageUpdated;
+                    discord.Disconnected -= Discord_Disconnected;
                 }
 
                 await discord.StopAsync();
                 await discord.LogoutAsync();
             }
+
+            cancellationToken = null;
+        }
+
+        private Task Discord_Disconnected(Exception arg)
+        {
+            if (cancellationToken is CancellationTokenSource)
+            {
+                cancellationToken.Cancel();
+            }
+
+            return Task.CompletedTask;
         }
     }
 }

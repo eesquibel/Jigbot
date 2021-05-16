@@ -3,20 +3,23 @@
     "Jigbot": {
       "commandName": "Project",
       "environmentVariables": {
+        "UPLOADS": "D:\\Temp;D:\\Temp",
+        "ETCD_URL": "http://localhost:2379",
         "DOTNET_ENVIRONMENT": "Development",
-        "UPLOADS": "D:\\Temp",
-        "COMMAND": "test",
         "URIBASE": "D:\\Temp",
         "ETCD_PREFIX": "jigbot/test",
-        "ETCD_URL": "http://localhost:2379",
-        "Token": "token"
+        "COMMAND": "test",
+        "Token": ""
       }
     },
     "Docker": {
       "commandName": "Docker",
       "environmentVariables": {
-        "Command": "",
-        "URIBASE": "",
+        "UPLOADS": "/var/local/jigbot/uploads/test1;/var/local/jigbot/uploads/test2",
+        "ETCD_URL": "http://etcd:2379",
+        "URIBASE": "/var/local/jigbot/images/test1;/var/local/jigbot/images/test2",
+        "ETCD_PREFIX": "jigbot/test",
+        "COMMAND": "test1;test2",
         "Token": ""
       }
     }

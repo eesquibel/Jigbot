@@ -22,7 +22,7 @@ namespace Jigbot.States
                     return;
                 }
 
-                var channelMatch = new Regex($@"^.*{Regex.Escape($"/Frequency/")}(?<channel>[\d]+)$");
+                var channelMatch = new Regex($@"^.*{Regex.Escape("/Frequency/")}(?<channel>[\d]+)$");
 
                 foreach (var (Key, Value) in task.Result)
                 {
@@ -51,6 +51,7 @@ namespace Jigbot.States
                 }
             });
         }
+
         public new bool TryUpdate(ulong key, uint newValue, uint comparisonValue)
         {
             var result = base.TryUpdate(key, newValue, comparisonValue);

@@ -17,14 +17,19 @@ ARG ETCD="ETCD"
 RUN dotnet publish -property:ETCD=${ETCD} --configuration Release --output /app/publish "Jigbot.csproj"
 
 FROM base AS final
+
 ENV Token=""
 ENV ETCD_URL=""
 ENV ETCD_PREFIX=""
 ENV COMMAND=""
 ENV URIBASE=""
 ENV UPLOADS=""
+
 VOLUME /var/local/jigbot/uploads
 VOLUME /var/local/jigbot/images
+
 WORKDIR /app
+
 COPY --from=publish /app/publish .
+
 ENTRYPOINT ["dotnet", "Jigbot.dll"]
