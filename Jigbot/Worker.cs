@@ -22,10 +22,12 @@ namespace Jigbot
         private CommandService command;
         private ServiceProvider services;
         private CancellationTokenSource cancellationToken;
+        private IHostApplicationLifetime lifetime;
 
-        public Worker(ILogger<Worker> logger)
+        public Worker(ILogger<Worker> logger, IHostApplicationLifetime lifetime)
         {
             this.logger = logger;
+            this.lifetime = lifetime;
         }
 
         private Task Discord_MessageUpdated(Cacheable<IMessage, ulong> cacheableBefore, SocketMessage after, ISocketMessageChannel channel)
@@ -162,7 +164,6 @@ namespace Jigbot
                  * and to get embeds that are parsed asynchonously and sent via MESSAGE_UPDATE event
                  */
                 MessageCacheSize = 128,
-                DefaultRetryMode = RetryMode.AlwaysFail,
             }))
             {
                 discord.Log += Discord_Log;
@@ -230,6 +231,7 @@ namespace Jigbot
             }
 
             cancellationToken = null;
+            lifetime.StopApplication();
         }
 
         private Task Discord_Disconnected(Exception arg)
