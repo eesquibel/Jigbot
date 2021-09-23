@@ -238,7 +238,13 @@ namespace Jigbot
         {
             if (cancellationToken is CancellationTokenSource)
             {
-                cancellationToken.Cancel();
+                try
+                {
+                    cancellationToken.Cancel();
+                } catch (Exception)
+                {
+                    lifetime.StopApplication();
+                }
             }
 
             return Task.CompletedTask;
