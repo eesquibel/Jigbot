@@ -8,6 +8,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 
 namespace Jigbot.States
 {
@@ -45,10 +46,10 @@ namespace Jigbot.States
                         break;
                     case "http":
                     case "https":
-                        var request = WebRequest.Create(uri);
-                        using (var response = request.GetResponse())
+                        var request = new HttpClient();
+                        using (var response = request.Send(new HttpRequestMessage(HttpMethod.Get, uri)))
                         {
-                            using (var reader = new StreamReader(response.GetResponseStream()))
+                            using (var reader = new StreamReader(response.Content.ReadAsStream()))
                             {
                                 using (var json = new JsonTextReader(reader))
                                 {

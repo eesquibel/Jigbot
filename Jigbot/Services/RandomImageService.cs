@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Net;
 using System.Threading.Tasks;
+using System.Net.Http;
 
 namespace Jigbot.Services
 {
@@ -145,11 +146,11 @@ namespace Jigbot.Services
                     return await channel.SendFileAsync(file, text, false, null, null, spoiler);
                 case "http":
                 case "https":
-                    var request = WebRequest.Create(Images.UriBase + file);
+                    var request = new HttpClient();
                     logger.LogInformation($"RandomImage for {channel.Name} <#{channel.Id}>: {Images.UriBase + file}");
-                    using (var response = await request.GetResponseAsync())
+                    using (var response = await request.GetStreamAsync(Images.UriBase + file))
                     {
-                        return await channel.SendFileAsync(response.GetResponseStream(), file, text, false, null, null, spoiler);
+                        return await channel.SendFileAsync(response, file, text, false, null, null, spoiler);
                     }
             }
 

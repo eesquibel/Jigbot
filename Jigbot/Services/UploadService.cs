@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 
@@ -13,8 +14,8 @@ namespace Jigbot.Services
     public class UploadService
     {
         private readonly string[] Uploads;
-        private readonly WebClient WebClient;
-        private readonly SHA1CryptoServiceProvider SHA1;
+        private readonly HttpClient HttpClient;
+        private readonly SHA1 SHA1;
         private static readonly Emoji Check = new Emoji("\u2611\uFE0F");
 
         public readonly bool Enabled = false;
@@ -52,8 +53,8 @@ namespace Jigbot.Services
                 if (list.Count > 0)
                 {
                     Uploads = list.Values.ToArray();
-                    WebClient = new WebClient();
-                    SHA1 = new SHA1CryptoServiceProvider();
+                    HttpClient = new HttpClient();
+                    SHA1 = SHA1.Create();
                     Enabled = true;
                 }
             }
@@ -125,7 +126,7 @@ namespace Jigbot.Services
 
             try
             {
-                var bytes = await WebClient.DownloadDataTaskAsync(uri);
+                var bytes = await HttpClient.GetByteArrayAsync(uri);
 
                 logger.LogInformation($"Downloaded {uri} ({bytes.Length} bytes)");
 
